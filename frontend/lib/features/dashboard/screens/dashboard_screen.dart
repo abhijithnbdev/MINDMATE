@@ -105,8 +105,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 mainAxisSpacing: 15,
                 childAspectRatio: 1.4,
                 children: [
-                  StatCard(title: "Events", value: "$eventCount", icon: Icons.calendar_today),
-                  const StatCard(title: "System", value: "Optimal", icon: Icons.check_circle_outline),
+                  DashboardStatCard(label: "Events", value: "$eventCount", icon: Icons.calendar_today),
+                  const DashboardStatCard(label: "System", value: "Optimal", icon: Icons.check_circle_outline),
                 ],
               ),
 

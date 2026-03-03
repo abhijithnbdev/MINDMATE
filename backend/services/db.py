@@ -1,19 +1,23 @@
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import os
 
-# 1. Define the path to the database file
-# This points to backend/db/mindmate.db
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) 
-DB_PATH = os.path.join(BASE_DIR, "db", "mindmate.db")
+# Database Connection Configuration
+PG_CONFIG = {
+    "host": "127.0.0.1",
+    "port": 5432,
+    "dbname": "mindmate",
+    "user": "mindmate_user",
+    "password": "mindmate123"
+}
+
 
 def get_db():
-    """Establishes a connection to the SQLite database."""
-    # 2. Ensure the db/ folder exists
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    
-    # 3. Connect
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    
-    # 4. Return rows as dictionary-like objects (allows row['column_name'])
-    conn.row_factory = sqlite3.Row 
+    """Establishes a connection to the PostgreSQL database."""
+    conn = psycopg2.connect(**PG_CONFIG)
+    # This allows row['column_name'] access like SQLite's Row factory
     return conn
+
+def get_cursor(conn):
+    """Returns a dictionary-like cursor."""
+    return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

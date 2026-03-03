@@ -41,7 +41,7 @@ class _VoiceEnrollmentScreenState extends State<VoiceEnrollmentScreen> {
 
     if (path != null) {
       // Upload to Backend
-      var request = http.MultipartRequest('POST', Uri.parse("${ApiConstants.baseUrl}/auth/enroll-voice"));
+      var request = http.MultipartRequest('POST', Uri.parse(ApiConstants.voiceEnrollEndpoint));
       request.fields['user_id'] = widget.userId;
       request.files.add(await http.MultipartFile.fromPath('file', path));
 

@@ -1,18 +1,12 @@
-from services.db import get_db
+# services/patterns.py
+from services.db import get_db, get_cursor
 from collections import Counter
 
 def daily_overview(user_id: str):
-    """Calculates the dominant activity for morning, afternoon, and evening."""
     conn = get_db()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
 
-    # Query events (assuming you have historical data here)
-    cur.execute("""
-        SELECT start_time, title 
-        FROM events 
-        WHERE user_id = ?
-    """, (user_id,))
-    
+    cur.execute("SELECT start_time, title FROM events WHERE user_id = %s", (user_id,))
     rows = cur.fetchall()
     conn.close()
 

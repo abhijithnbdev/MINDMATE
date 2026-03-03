@@ -28,7 +28,7 @@ flutter emulators --launch Pixel_6
 
  uvicorn app.main:app --reload           
 
-  uvicorn main:app --reload --host 0.0.0.0 --port 8000      
+uvicorn main:app --reload --host 0.0.0.0 --port 8000        
 
 
 
@@ -41,3 +41,7 @@ Lifestyle Prediction: Random Forest Classifier (habit_model.pkl) trained on dail
 RAG System: Real-time retrieval of notes and schedules from SQLite to provide factual answers.
 
 Voice Intelligence: Whisper-based STT for hands-free interaction.
+
+
+psql -U postgres -d mindmate
+password - postgres123

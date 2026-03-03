@@ -15,7 +15,7 @@ class MemoryRequest(BaseModel):
     category: str
     type: str = "note" 
 
-@router.get("/")
+@router.get("/memories")
 def get_timeline(user_id: str):
     try:
         with sqlite3.connect(DB_PATH) as conn:
@@ -26,7 +26,7 @@ def get_timeline(user_id: str):
     except Exception as e:
         return {"timeline": []}
 
-@router.post("/")
+@router.post("/memories")
 def add_memory(memory: MemoryRequest):
     try:
         with sqlite3.connect(DB_PATH) as conn:
@@ -42,7 +42,7 @@ def add_memory(memory: MemoryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ✅ NEW: Schedule Prediction (Moved here to avoid creating new files)
-@router.get("/predict-schedule")
+@router.get("/predict/schedule")
 def predict_schedule(date: str):
     prompt = f"Create a simple daily schedule for {date} as a JSON list."
     try:

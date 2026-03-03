@@ -8,6 +8,14 @@ class AppTheme {
   static const Color kAccentGreen = Color(0xFF00C853);
   static const Color kTextWhite = Color(0xFFFFFFFF);
   static const Color kTextGrey = Color(0xFFB3B3B3);
+  static const Color textSecondary = kTextGrey;
+  static const Color primaryMint = kAccentGreen;
+  static const Color surface = kCardDark;
+  static const BoxShadow glowBoxShadow = BoxShadow(
+    color: kAccentGreen,
+    blurRadius: 20,
+    spreadRadius: 4,
+  );
 
   // 🌈 Gradients
   static const LinearGradient mintGradient = LinearGradient(

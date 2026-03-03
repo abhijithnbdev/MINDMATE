@@ -1,94 +1,128 @@
-import os.path
-import pickle
+import os
+import json
 import base64
-from email.mime.text import MIMEText
-from google.auth.transport.requests import Request
+import pickle
+from datetime import datetime
+from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from email.mime.text import MIMEText
+import requests
+import re
 
-# 1. Setup Paths
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CREDENTIALS_FILE = os.path.join(BASE_DIR, 'credentials.json')
-TOKEN_FILE = os.path.join(BASE_DIR, 'token.pickle')
+# Standardized DB Router
+from services.db_helper import save_to_appropriate_table
 
-# 2. Define Permissions (Read & Send)
 SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
     'https://www.googleapis.com/auth/gmail.send'
 ]
 
-def get_gmail_service():
-    """Authenticates the user and returns the Gmail Service."""
+def get_gmail_service(user_id):
+    """Authenticates based on specific user_id to prevent data leakage."""
     creds = None
+    token_dir = 'tokens'
+    token_path = os.path.join(token_dir, f'token_{user_id}.pickle')
     
-    # Load token if it exists
-    if os.path.exists(TOKEN_FILE):
-        with open(TOKEN_FILE, 'rb') as token:
+    if not os.path.exists(token_dir):
+        os.makedirs(token_dir)
+
+    if os.path.exists(token_path):
+        with open(token_path, 'rb') as token:
             creds = pickle.load(token)
-    
-    # If no token, log in
+            
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            try:
-                creds.refresh(Request())
-            except:
-                if os.path.exists(TOKEN_FILE):
-                    os.remove(TOKEN_FILE)
-                return get_gmail_service()
+            creds.refresh(Request())
         else:
-            if not os.path.exists(CREDENTIALS_FILE):
-                print(f"❌ Error: credentials.json not found at {CREDENTIALS_FILE}")
-                return None
-            
-            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+            # Ensure credentials.json is in your root backend folder
+            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
             creds = flow.run_local_server(port=0)
-        
-        # Save token for next time
-        with open(TOKEN_FILE, 'wb') as token:
+        with open(token_path, 'wb') as token:
             pickle.dump(creds, token)
 
     return build('gmail', 'v1', credentials=creds)
 
-def fetch_recent_emails(limit=5):
-    """Fetches emails for the AI."""
+def call_llm_json(prompt):
+    """Forces Ollama into JSON mode and cleans output."""
+    OLLAMA_URL = "http://localhost:11434/api/generate"
     try:
-        service = get_gmail_service()
-        if not service: return "Error: credentials.json missing."
+        r = requests.post(
+            OLLAMA_URL,
+            json={
+                "model": "phi3", 
+                "prompt": prompt, 
+                "format": "json", 
+                "stream": False
+            },
+            timeout=45
+        )
+        response_text = r.json().get("response", "").strip()
+        match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        if match:
+            # Clean up potential trailing commas before closing braces
+            cleaned_json = re.sub(r',\s*\}', '}', match.group(0))
+            return json.loads(cleaned_json)
+        return {"has_data": False}
+    except Exception as e:
+        print(f"⚠️ JSON Parse Fail: {e}")
+        return {"has_data": False}
 
-        results = service.users().messages().list(userId='me', maxResults=limit).execute()
+def deep_sync_gmail(user_id, count=50):
+    """Scans emails and populates DB with strict date enforcement."""
+    print(f"🕵️ MindMate is performing a deep sync for {user_id}...")
+    try:
+        service = get_gmail_service(user_id)
+        results = service.users().messages().list(userId='me', maxResults=count).execute()
         messages = results.get('messages', [])
+        
+        # Current time for the AI to use as a fallback reference
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        if not messages:
-            return "No emails found."
-
-        summary = []
         for message in messages:
             msg = service.users().messages().get(userId='me', id=message['id']).execute()
-            headers = msg['payload']['headers']
-            subject = next((h['value'] for h in headers if h['name'] == 'Subject'), "No Subject")
-            sender = next((h['value'] for h in headers if h['name'] == 'From'), "Unknown")
-            snippet = msg.get('snippet', '')
-            summary.append(f"📩 From: {sender}\n   Subject: {subject}\n   Snippet: {snippet}\n")
-
-        return "\n".join(summary)
-
+            snippet = msg.get('snippet', '').replace('"', "'") 
+            
+            prompt = f"""
+            Extract info from email: "{snippet}"
+            Reference Time: {now_str}
+            
+            Rules:
+            1. Return JSON ONLY.
+            2. If an event is found, "date" MUST be in 'YYYY-MM-DD HH:MM:00' format.
+            3. NEVER use placeholders like 'current_date'. If unknown, use '{now_str}'.
+            
+            Schema:
+            {{
+              "has_data": true,
+              "type": "event" | "note" | "task",
+              "data": {{ 
+                "title": "Short Heading", 
+                "content": "Description", 
+                "date": "{now_str}", 
+                "location": "Kerala", 
+                "link": "none" 
+              }}
+            }}
+            """
+            analysis = call_llm_json(prompt)
+            if analysis and analysis.get("has_data"):
+                save_to_appropriate_table(user_id, analysis, origin_location="Gmail")
+                
+        print(f"✅ Deep sync complete for {user_id}.")
     except Exception as e:
-        return f"Error: {str(e)}"
+        print(f"❌ Sync Failed for {user_id}: {e}")
 
-def send_email(to_email, subject, body):
-    """Sends an email."""
+def send_gmail_message(user_id, recipient_email, subject, body):
+    """Sends an email using the specific user's credentials."""
+    service = get_gmail_service(user_id)
+    message = MIMEText(body)
+    message['to'] = recipient_email
+    message['subject'] = subject
+    raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
     try:
-        service = get_gmail_service()
-        message = MIMEText(body)
-        message['to'] = to_email
-        message['subject'] = subject
-        
-        raw = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
-        body = {'raw': raw}
-        
-        service.users().messages().send(userId='me', body=body).execute()
-        print(f"✅ Email sent to {to_email}")
-        return True
+        service.users().messages().send(userId='me', body={'raw': raw}).execute()
+        return f"✅ Email sent successfully."
     except Exception as e:
-        print(f"❌ Send Error: {e}")
-        return False
+        return f"❌ Failed to send: {str(e)}"

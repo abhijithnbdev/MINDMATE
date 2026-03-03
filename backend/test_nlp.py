@@ -26,18 +26,33 @@ def run_persona_tests():
         #         {
         #     "user": "admin",
         #     "name": "admin",
-        #     "query": "which day that i have a meeting at 6 pm"
+        #     "query": "what is my previous appointments on 5 pm",
+        # },
+        # {
+        #     "user": "admin",
+        #     "name": "admin",
+        #     "query": "give me a plan for tommarow"
+        # },
+        #         {
+        #     "user": "dummy_professional",
+        #     "name":"__dummy__",
+        #     "query": "give me a plan for tommarow"
+        # },
+        # {
+        #     "user": "dummy_student",
+        #     "name":"__dummy__",
+        #     "query": "give me a plan for tommarow"
         # },
         {
-            "user": "admin",
-            "name": "admin",
-            "query": "give me a plan for tommarow"
+            "user": "lawyer_alan",
+            "name": "Lawyer Alan",
+            "query": "What is the strategy for the Smith case?"
         },
         # {
-        #     "user": "lawyer_alan",
-        #     "name": "Lawyer Alan",
-        #     "query": "What is the strategy for the Smith case?"
-        # }
+        #     "user": "admin",
+        #     "name": "admin",
+        #     "query": "wha tdo you know about me"
+        # },
     ]
 
     for case in test_cases:

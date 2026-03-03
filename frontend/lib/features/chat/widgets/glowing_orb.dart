@@ -3,7 +3,8 @@ import '../../../core/theme/app_theme.dart';
 
 class GlowingOrb extends StatefulWidget {
   final bool isListening;
-  const GlowingOrb({super.key, required this.isListening});
+  final double size;
+  const GlowingOrb({super.key, required this.isListening, this.size = 280});
 
   @override
   State<GlowingOrb> createState() => _GlowingOrbState();
@@ -18,7 +19,10 @@ class _GlowingOrbState extends State<GlowingOrb> with SingleTickerProviderStateM
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 4),
-    )..repeat(reverse: true);
+    );
+    if (widget.isListening) {
+      _controller.repeat(reverse: true);
+    }
   }
 
   @override
@@ -28,13 +32,23 @@ class _GlowingOrbState extends State<GlowingOrb> with SingleTickerProviderStateM
   }
 
   @override
+  void didUpdateWidget(covariant GlowingOrb oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isListening && !_controller.isAnimating) {
+      _controller.repeat(reverse: true);
+    } else if (!widget.isListening && _controller.isAnimating) {
+      _controller.stop();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
         return Container(
-          width: 280,
-          height: 280,
+          width: widget.size,
+          height: widget.size,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             // The Gradient
@@ -51,8 +65,8 @@ class _GlowingOrbState extends State<GlowingOrb> with SingleTickerProviderStateM
             boxShadow: [
               BoxShadow(
                 color: AppTheme.primaryMint.withOpacity(0.3),
-                blurRadius: 40 + (widget.isListening ? 10 * _controller.value : 0),
-                spreadRadius: 10 + (widget.isListening ? 15 * _controller.value : 0),
+                blurRadius: widget.isListening ? 40 + 10 * _controller.value : 30,
+                spreadRadius: widget.isListening ? 10 + 15 * _controller.value : 8,
               )
             ],
           ),

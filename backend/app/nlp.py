@@ -1,102 +1,211 @@
-import json, requests, sqlite3, re, os
-import numpy as np
-import joblib
-import pandas as pd
+# app/nlp.py
+import os, json, re, requests, joblib, pandas as pd
 from datetime import datetime, timedelta
-from services.db import get_db
 
-# --- CONFIG ---
+from app.advanced_nlp import IntentAnalyzer
+from rag.retriever import retrieve_context
+from services.db_helper import save_to_appropriate_table
+from services.db import get_db
+from models.predictor import HabitEngine
+from services.user_model_manager import get_habit_engine
+from rag.prompt_builder import build_prompt
+from services.events import get_schedule_for_date
+from services.gmail import deep_sync_gmail
+
+
+# ---------------- CONFIG ----------------
 OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL_NAME = "phi3"
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "../models/habit_model.pkl")
 
-# --- HABIT MODEL ENGINE ---
-class HabitEngine:
-    def __init__(self):
-        self.activity_map = {0: 'Sleep', 1: 'Breakfast', 2: 'Study', 3: 'Work', 4: 'Rest', 5: 'Gym'}
-        try:
-            self.model = joblib.load(MODEL_PATH)
-        except:
-            self.model = None
+intent_analyzer = IntentAnalyzer()
 
-    def get_prediction(self, hour, day, month, prev_id=0):
-        if not self.model: return "Rest"
-        # Using DataFrame to avoid Feature Name warnings
-        features = pd.DataFrame([[hour, day, month, 0, 1, prev_id]], 
-                                columns=['Hour', 'DayOfWeek', 'Month', 'Location', 'Fatigue', 'PrevActivity'])
-        pred_id = int(self.model.predict(features)[0])
-        return self.activity_map.get(pred_id, "Rest")
 
-habit_engine = HabitEngine()
+from models.predictor import HabitEngine
 
-# --- CONTEXT PROVIDERS ---
-def get_db_safe(): return get_db()
 
-def get_user_background_summary(user_id: str):
-    conn = get_db_safe()
-    cur = conn.cursor()
-    profile = []
-    try:
-        cur.execute("SELECT title FROM events WHERE user_id = ? ORDER BY id DESC LIMIT 5", (user_id,))
-        recent = [row[0].lower() for row in cur.fetchall()]
-        if any(k in e for e in recent for k in ["exam", "lab", "study"]): profile.append("User Persona: Student")
-        if any(k in e for e in recent for k in ["patient", "clinic"]): profile.append("User Persona: Medical Prof")
-    except: pass
-    finally: conn.close()
-    return "\n".join(profile)
 
-def get_relevant_knowledge(user_id: str, text: str):
-    conn = get_db_safe()
-    cur = conn.cursor()
-    found = []
-    keywords = [w for w in re.findall(r'\w+', text.lower()) if len(w) >= 2]
-    try:
-        for word in keywords:
-            p = f'%{word}%'
-            cur.execute("SELECT title, summary FROM notes WHERE user_id=? AND (title LIKE ? OR summary LIKE ?)", (user_id, p, p))
-            for row in cur.fetchall(): found.append(f"Note: {row[0]} - {row[1]}")
-            cur.execute("SELECT title, start_time FROM events WHERE user_id=? AND (title LIKE ? OR start_time LIKE ?)", (user_id, p, p))
-            for row in cur.fetchall(): found.append(f"Event: {row[0]} at {row[1]}")
-    except: pass
-    finally: conn.close()
-    return "\n".join(list(set(found))) if found else "No matching records."
+# ---------------- UTIL ----------------
+def humanize_datetime(dt: datetime) -> str:
+    today = datetime.now().date()
+    d = dt.date()
 
-def get_schedule_context(user_id: str):
-    conn = get_db_safe()
-    cur = conn.cursor()
-    now = datetime.now()
-    future = now + timedelta(hours=24)
-    try:
-        cur.execute("SELECT title, start_time FROM events WHERE user_id=? AND start_time BETWEEN ? AND ?", 
-                    (user_id, now.strftime("%Y-%m-%d %H:%M"), future.strftime("%Y-%m-%d %H:%M")))
-        return "\n".join([f"- {r[0]} at {r[1]}" for r in cur.fetchall()])
-    except: return "No upcoming events."
-    finally: conn.close()
+    if d == today:
+        return f"today at {dt.strftime('%I:%M %p')}"
+    if d == today - timedelta(days=1):
+        return f"yesterday at {dt.strftime('%I:%M %p')}"
+    if d == today + timedelta(days=1):
+        return f"tomorrow at {dt.strftime('%I:%M %p')}"
 
-# --- MAIN ASSISTANT LOGIC ---
-def generate_conversational_response(user_id, text):
-    knowledge = get_relevant_knowledge(user_id, text)
-    schedule = get_schedule_context(user_id)
-    background = get_user_background_summary(user_id)
+    return dt.strftime('%Y-%m-%d at %I:%M %p')
+
+
+def extract_date(text: str) -> str:
+    t = text.lower()
+    today = datetime.now().date()
+
+    if "tomorrow" in t:
+        return (today + timedelta(days=1)).strftime("%Y-%m-%d")
+    if "today" in t:
+        return today.strftime("%Y-%m-%d")
+
+    match = re.search(r"\d{4}-\d{2}-\d{2}", t)
+    if match:
+        return match.group(0)
+
+    return today.strftime("%Y-%m-%d")
+
+# ---------------- LLM ----------------
+def call_llm(prompt: str) -> str:
+    r = requests.post(
+        OLLAMA_URL,
+        json={"model": MODEL_NAME, "prompt": prompt, "stream": False},
+        timeout=60
+    )
+    return r.json().get("response", "").strip()
+
+# ---------------- HABIT MODEL ----------------
+
+
+def resolve_meal(hour: int, wake_hour: int = 7):
+    if wake_hour <= hour <= wake_hour + 2:
+        return "Breakfast"
+    if 12 <= hour <= 14:
+        return "Lunch"
+    if 18 <= hour <= 20:
+        return "Dinner"
+    if (10 <= hour < 12) or (15 <= hour < 18):
+        return "Snack"
+    return None
+
+
+# ---------------- PLANNING ----------------
+def generate_blended_day_plan(user_id: str, date_str: str):
+    # ✅ Initialize the engine here, inside the function
+    habit_engine = get_habit_engine(user_id) 
     
-    now = datetime.now()
-    habit_now = habit_engine.get_prediction(now.hour, now.weekday(), now.month)
+    date = datetime.strptime(date_str, "%Y-%m-%d")
+    day, month = date.weekday(), date.month
 
-    prompt = f"""<|system|>
-You are MindMate, a Personal AI Assistant. 
-Background: {background} | Records: {knowledge} | Schedule: {schedule}
-Habit Insight: At this time, the user usually does: {habit_now}.
-INSTRUCTIONS: Use records for the past, habits for the routine, and be professional.<|end|>
-<|user|>{text}<|end|><|assistant|>"""
+    timeline = {h: None for h in range(7, 23)}
+    events = get_events_for_date(user_id, date_str)
+    
+    # ... rest of your code ...
+    for h in range(7, 23):
+        if timeline[h] is None:
+            # ✅ Use the habit_engine created above
+            act = habit_engine.predict(h, day, month) 
+            # ...
+
+# ---------------- MAIN ----------------
+def generate_conversational_response(user_id: str, text: str):
+    # --- STEP 1: PROACTIVE INTENT ANALYSIS ---
+    routing_prompt = f"""
+    Analyze the user input: "{text}"
+    Categories:
+    - 'email_sync': Checking/reading emails or asking "what's new in my mail?".
+    - 'email_send': Explicit request to send, mail, or message someone.
+    - 'general': Chatting, asking questions, or planning.
+    
+    Return ONLY the category name.
+    """
+    intent = call_llm(routing_prompt).lower().strip()
+
+    # --- STEP 2: ROUTING ---
+    
+    # A. Proactive Sync + Summary
+    if "email_sync" in intent:
+        from services.gmail import deep_sync_gmail
+        # 1. Perform the actual sync (saves to DB)
+        deep_sync_gmail(user_id, count=3)
+        
+        # 2. Get the latest context from the DB to answer the user
+        context = retrieve_context(user_id, "latest gmail updates")
+        summary_prompt = f"""
+            The user asked: {text}. 
+            Data found in DB: {context}
+            If the data is empty or irrelevant, say 'I couldn't find any recent emails.'
+            Otherwise, provide a 2-sentence summary.
+            """
+        
+        return call_llm(summary_prompt)
+
+    # B. Send Email Logic
+    if "email_send" in intent:
+        # Assuming you have a handle_send_request function
+        return handle_send_request(user_id, text)
+
+    # C. Standard RAG Flow
+    context = retrieve_context(user_id, text)
+    final_prompt = build_prompt(text, context)
+    
+    try:
+        r = requests.post(
+            OLLAMA_URL,
+            json={"model": MODEL_NAME, "prompt": final_prompt, "stream": False},
+            timeout=30
+        )
+        return r.json().get("response", "I'm having trouble thinking right now.")
+    except Exception as e:
+        return f"Connection error: {e}"
+def analyze_conversation_payload(user_id: str, text: str) -> dict:
+    """
+    Extracts structured memory (note / schedule) from user input.
+    Returns JSON only. No assumptions.
+    """
+
+    prompt = f"""
+You are an information extractor.
+
+Text:
+"{text}"
+
+Rules:
+- If there is NO important information → return {{ "has_data": false }}
+- Important info = schedules, meetings, reminders, notes, tasks
+- Do NOT invent dates or times
+- Return VALID JSON ONLY
+
+Schema:
+{{
+  "has_data": true | false,
+  "category": "note" | "schedule",
+  "note": {{
+    "title": "",
+    "summary": "",
+    "category": ""
+  }},
+  "schedule": {{
+    "title": "",
+    "start_time": "",
+    "end_time": ""
+  }}
+}}
+"""
 
     try:
-        response = requests.post(OLLAMA_URL, json={"model": MODEL_NAME, "prompt": prompt, "stream": False})
-        return response.json().get("response", "I am listening...")
-    except: return "Brain offline. Check Ollama."
+        r = requests.post(
+            OLLAMA_URL,
+            json={
+                "model": MODEL_NAME,
+                "prompt": prompt,
+                "format": "json",
+                "stream": False
+            },
+            timeout=30
+        )
+        return json.loads(r.json().get("response", "{}"))
+    except Exception as e:
+        return {"has_data": False}
 
-def analyze_conversation_payload(user_id, text):
-    prompt = f"""<|user|>Input: "{text}". Extract JSON (category: note/schedule, note: {{heading, summary, category}}, schedule: {{title, start_time}}). Return JSON ONLY.<|end|><|assistant|>"""
-    try:
-        response = requests.post(OLLAMA_URL, json={"model": MODEL_NAME, "prompt": prompt, "format": "json", "stream": False})
-        return json.loads(response.json().get("response", "{}"))
-    except: return {"has_data": False}
+def handle_send_request(user_id, text):
+    from services.gmail import send_gmail_message
+    
+    # Simple extraction (You can make this better with another LLM call)
+    # For now, let's use a hardcoded test to verify the connection
+    recipient = "forgotitsorry1@gmail.com"
+    subject = "Update from MindMate AI"
+    body = f"Hello! This is an automated message from your MindMate Assistant regarding: {text}"
+    
+    result = send_gmail_message(user_id, recipient, subject, body)
+    return result

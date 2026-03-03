@@ -32,8 +32,11 @@ class ApiService {
   }
 
   // 2. Get Memories (Timeline)
-  static Future<List<dynamic>> getMemories(String userId) async {
-    final url = Uri.parse('${ApiConstants.baseUrl}/memories?user_id=$userId');
+  static Future<List<dynamic>> getMemories(String userId, {String? category}) async {
+    final query = category != null && category.isNotEmpty 
+      ? 'user_id=$userId&category=$category' 
+      : 'user_id=$userId';
+    final url = Uri.parse('${ApiConstants.memories}?$query');
     try {
       final response = await http.get(url);
       if (response.statusCode == 200) {
@@ -82,9 +85,8 @@ class ApiService {
     }
     return [];
   }
-static Future<Map<String, dynamic>> generateSchedule(String date) async {
-    // 🟢 CHANGED URL: Now pointing to 'memories' instead of 'predict'
-    final url = Uri.parse('${ApiConstants.baseUrl}/memories/predict-schedule?date=$date'); 
+  static Future<Map<String, dynamic>> generateSchedule(String date) async {
+    final url = Uri.parse('${ApiConstants.predictScheduleEndpoint}?date=$date'); 
     
     try {
       final response = await http.get(url);

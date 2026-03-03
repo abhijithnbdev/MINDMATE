@@ -1,4 +1,4 @@
-# Python / Backend
+# --- Python & Environment ---
 .env
 __pycache__/
 *.py[cod]
@@ -6,22 +6,33 @@ __pycache__/
 venv/
 ENV/
 .DS_Store
-*.wav
-backend/db/*.db
-backend/models/*.pkl
-*.db
-*.sqlite3
-backend/mindmate.db
+
+# --- Google Auth (CRITICAL PRIVACY) ---
+# Ignore the main credentials and ALL user-specific tokens
 credentials.json
 token.pickle
-# Python Environment
-__pycache__/
-*.pyc
-# Flutter / Frontend
+tokens/
+*.pickle
+
+# --- Databases & Large Files ---
+*.db
+*.sqlite3
+*.wav
+backend/db/*.db
+backend/mindmate.db
+# Ignore pgvector/pytorch model files if stored locally
+backend/models/*.pkl
+*.onnx
+*.pt
+*.bin
+
+# --- Flutter / Frontend ---
 frontend/build/
 frontend/.dart_tool/
 frontend/.flutter-plugins
 frontend/.flutter-plugins-dependencies
+frontend/.pub-cache/
 frontend/.idea/
 frontend/android/.gradle
 frontend/ios/Flutter/Generated.xcconfig
+frontend/ios/Flutter/flutter_export_environment.sh

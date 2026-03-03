@@ -1,0 +1,43 @@
+# --- Core Framework ---
+fastapi==0.115.0
+uvicorn==0.30.6
+pydantic==2.9.2
+python-multipart==0.0.9
+
+# --- AI & NLP ---
+speechbrain==1.0.1
+huggingface-hub==0.24.6
+sentence-transformers==3.0.1
+transformers==4.44.2
+faster-whisper==1.0.3
+onnxruntime==1.19.2
+torch==2.4.1
+torchaudio==2.4.1
+
+# --- Database & RAG ---
+psycopg2-binary==2.9.9
+pgvector==0.3.2
+
+# --- Data Handling & Utils ---
+pandas==2.2.2
+numpy==1.26.4
+scikit-learn==1.5.1
+joblib==1.4.2
+requests==2.32.3
+HyperPyYAML==1.2.2
+PyYAML==6.0.2
+soundfile==0.12.1
+
+# --- Python 3.13 Compatibility Fixes (CRITICAL) ---
+audioop-lts==0.2.1
+standard-aifc==3.13.0
+standard-chunk==3.13.0
+standard-sunau==3.13.0
+
+# --- Google Workspace Integration ---
+google-api-python-client==2.144.0
+google-auth-httplib2==0.2.0
+google-auth-oauthlib==1.2.1
+
+# --- Security ---
+passlib[bcrypt]==1.7.4

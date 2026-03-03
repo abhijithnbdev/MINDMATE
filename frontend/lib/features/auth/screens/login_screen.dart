@@ -4,6 +4,8 @@ import 'dart:convert';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../main_layout.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'voice_login_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -42,6 +44,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (response.statusCode == 200 && data['status'] == 'success') {
         // ✅ Login Success
         if (mounted) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool('isLoggedIn', true);
+          await prefs.setString('user_id', _userController.text.trim());
           Navigator.pushReplacement(
             context, 
             MaterialPageRoute(builder: (_) => MainLayout(userId: _userController.text.trim()))
@@ -112,6 +117,13 @@ class _LoginScreenState extends State<LoginScreen> {
                   ? const CircularProgressIndicator(color: Colors.black) 
                   : const Text("ACCESS SYSTEM", style: TextStyle(fontWeight: FontWeight.bold)),
               ),
+            ),
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: _isLoading ? null : () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const VoiceLoginScreen()));
+              },
+              child: const Text("Login with Voice"),
             ),
           ],
         ),

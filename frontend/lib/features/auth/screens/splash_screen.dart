@@ -23,12 +23,15 @@ class _SplashScreenState extends State<SplashScreen> {
     await Future.delayed(const Duration(seconds: 2)); // Fake loading
     final prefs = await SharedPreferences.getInstance();
     final bool isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+    final String? userId = prefs.getString('user_id');
 
     if (mounted) {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (context) => isLoggedIn ? const MainLayout() : const LoginScreen(),
+          builder: (context) => (isLoggedIn && userId != null) 
+              ? MainLayout(userId: userId) 
+              : const LoginScreen(),
         ),
       );
     }

@@ -209,7 +209,10 @@ class _HomeOrbScreenState extends State<HomeOrbScreen> {
           ),
         ),
         child: SafeArea(
-          child: Column(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.only(bottom: 20),
+            physics: const BouncingScrollPhysics(),
+            child: Column(
             children: [
               // --- HEADER ---
               Padding(
@@ -235,14 +238,13 @@ class _HomeOrbScreenState extends State<HomeOrbScreen> {
                 ),
               ),
               
-              const Spacer(flex: 1),
-
               // --- MAIN ORB ---
               GestureDetector(
                 onTap: _toggleRecording,
                 child: GlowingOrb(
-                  // Orb only glows if Listening OR Processing
-                  isListening: _isListening || _isProcessing
+                  // Motion only when speak enabled (recording)
+                  isListening: _isListening,
+                  size: MediaQuery.of(context).size.width * 0.7,
                 ),
               ),
               
@@ -253,7 +255,7 @@ class _HomeOrbScreenState extends State<HomeOrbScreen> {
                 style: const TextStyle(color: Colors.white24)
               ),
 
-              const SizedBox(height: 40),
+              const SizedBox(height: 20),
 
               // --- TRANSCRIPT CARD ---
               if (_userTranscript.isNotEmpty || _aiResponse.isNotEmpty)
@@ -292,8 +294,6 @@ class _HomeOrbScreenState extends State<HomeOrbScreen> {
                   ),
                 ),
 
-              const Spacer(flex: 2),
-
               // --- TEXT INPUT (Keyboard) ---
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 20),
@@ -330,6 +330,7 @@ class _HomeOrbScreenState extends State<HomeOrbScreen> {
                 ),
               ),
             ],
+            ),
           ),
         ),
       ),

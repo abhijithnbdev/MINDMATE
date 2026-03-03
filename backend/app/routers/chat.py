@@ -1,34 +1,49 @@
-import sys
+# app/routers/chat.py
 import os
-import shutil
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Body
-from app import stt, nlp
-from services.db_helper import log_chat, save_extracted_data
+from fastapi import APIRouter, Body, File, Form, UploadFile
+from rag.memory_writer import store_chat
+from app import nlp 
+from services.voice_auth import voice_security 
 
-router = APIRouter()
-UPLOAD_DIR = "uploads" # Simplified for reliability
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+router = APIRouter(prefix="/chat", tags=["Chat"])
 
 @router.post("/send")
-async def send_chat(user_id: str = Body(...), text: str = Body(...)):
-    try:
-        log_chat(user_id, "user", text)
-        extracted = nlp.analyze_conversation_payload(user_id, text)
-        if extracted.get("has_data"):
-            save_extracted_data(user_id, extracted)
-        ai_response = nlp.generate_conversational_response(user_id, text)
-        log_chat(user_id, "ai", ai_response)
-        return {"status": "success", "ai_response": ai_response}
-    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+async def send_chat(
+    user_id: str = Body(...),
+    text: str = Body(...)
+):
+    # 1️⃣ Save user message
+    store_chat(user_id, "user", text)
 
-@router.post("/upload-audio")
-async def upload_audio(user_id: str = Form(...), file: UploadFile = File(...)):
-    try:
-        file_path = os.path.join(UPLOAD_DIR, f"{user_id}_voice.wav")
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        transcript = stt.transcribe_audio(file_path) #
-        if not transcript: return {"status": "error", "message": "Silence detected."}
-        ai_response = nlp.generate_conversational_response(user_id, transcript)
-        return {"status": "success", "transcript": transcript, "ai_response": ai_response}
-    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+    # 2️⃣ Generate AI response (user-specific)
+    ai_response = nlp.generate_conversational_response(user_id, text)
+
+    # 3️⃣ Save AI message
+    store_chat(user_id, "ai", ai_response)
+
+    return {"response": ai_response}
+
+@router.post("/private-query")
+async def handle_private_query(
+    user_id: str = Form(...), 
+    text: str = Form(...), 
+    audio: UploadFile = File(...)
+):
+    # 1. Verify Voice First
+    temp_audio = "verify_temp.wav"
+    with open(temp_audio, "wb") as f:
+        f.write(await audio.read())
+        
+    is_match, score = voice_security.verify_user(user_id, temp_audio)
+    os.remove(temp_audio)
+
+    if not is_match:
+        return {"response": "Identity not verified. I cannot disclose private information."}
+
+    # 2. If verified, proceed to fetch private data (Gmail/Notes)
+    if "email" in text.lower():
+        from services.gmail import sync_and_classify_emails
+        return {"response": sync_and_classify_emails(user_id)}
+    
+    # Otherwise, handle as a normal query
+    return {"response": "Identity confirmed. How can I help with your data?"}

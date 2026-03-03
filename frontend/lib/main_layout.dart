@@ -3,6 +3,8 @@ import 'core/theme/app_theme.dart';
 import 'features/dashboard/screens/dashboard_screen.dart';
 import 'features/chat/screens/home_orb_screen.dart';
 import 'features/memory/screens/memory_screen.dart';
+import 'features/calendar/screens/calendar_screen.dart';
+import 'features/settings/settings_screen.dart';
 
 class MainLayout extends StatefulWidget {
   final String userId; 
@@ -20,10 +22,10 @@ class _MainLayoutState extends State<MainLayout> {
     // Pass userId to the screens
     final List<Widget> screens = [
       DashboardScreen(userId: widget.userId),
-      const Scaffold(body: Center(child: Text("Calendar (Coming Soon)"))),
+      const CalendarScreen(),
       HomeOrbScreen(userId: widget.userId),
       const MemoryScreen(),
-      const Scaffold(body: Center(child: Text("Settings (Coming Soon)"))), 
+      const SettingsScreen(), 
     ];
 
     return Scaffold(
