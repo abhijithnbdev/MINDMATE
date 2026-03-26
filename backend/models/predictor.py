@@ -2,36 +2,43 @@ import os
 import joblib
 import pandas as pd
 
-BASE_DIR = os.path.dirname(__file__)
-GLOBAL_MODEL = os.path.join(BASE_DIR, "global", "habit_model_global.pkl")
-
 class HabitEngine:
     def __init__(self, user_id: str):
-        self.user_id = user_id
-        self.activity_map = {
-            0: "Sleep",
-            1: "Breakfast",
-            2: "Study",
-            3: "Work",
-            4: "Rest",
-            5: "Gym",
-            6: "Snack"
-        }
+        self.model = None
+        self.encoder = None
+        
+        # Path to: backend/models/users/meanonymus87@gmail.com.pkl
+        model_path = os.path.join(os.path.dirname(__file__), "users", f"{user_id}.pkl")
 
-        user_model = os.path.join(
-            BASE_DIR, "users", user_id, "habit_model.pkl"
-        )
+        if os.path.exists(model_path):
+            try:
+                data = joblib.load(model_path)
+                # Load the dictionary saved by the trainer
+                if isinstance(data, dict):
+                    self.model = data.get('model')
+                    self.encoder = data.get('encoder')
+                else:
+                    self.model = data
+            except Exception as e:
+                print(f"❌ Error loading model: {e}")
 
-        if os.path.exists(user_model):
-            self.model = joblib.load(user_model)
-            self.source = "user"
-        else:
-            self.model = joblib.load(GLOBAL_MODEL)
-            self.source = "global"
+    def predict(self, hour, day, month):
+        # 🟢 Fallback for night hours if model isn't trained on Sleep
+        if hour < 7 or hour > 23:
+            return "Sleep"
 
-    def predict(self, hour, day, month, prev=0):
-        df = pd.DataFrame([[hour, day, month, prev]],
-            columns=["Hour", "DayOfWeek", "Month", "PrevActivity"]
-        )
-        pred = int(self.model.predict(df)[0])
-        return self.activity_map.get(pred, "Rest")
+        if not self.model:
+            return "Rest"
+
+        try:
+            # Predict using exact column names from training
+            df = pd.DataFrame([[hour, day, month]], columns=["Hour", "DayOfWeek", "Month"])
+            pred_id = self.model.predict(df)[0]
+            
+            # 🟢 Decode the number back to the string (e.g., 5 -> 'Deep Work')
+            if self.encoder:
+                return self.encoder.inverse_transform([pred_id])[0]
+            return str(pred_id)
+            
+        except Exception as e:
+            return "Routine Activity"

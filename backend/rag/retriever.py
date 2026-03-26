@@ -34,41 +34,84 @@ def retrieve_context(user_id: str, query: str, limit: int = 5) -> str:
 
     return "\n".join(context_lines)
 
-def retrieve_combined_context(user_id: str, query: str) -> str:
+# rag/retriever.py
+from services.db import get_db
+from rag.embedder import embed_text
+from datetime import datetime
+
+def retrieve_combined_context(user_id: str, query: str, limit: int = 3) -> str:
     """
-    Fetches context from both Events (structured) and Notes (semantic).
+    Fetches the ultimate context: 
+    - Future Schedule (Events)
+    - Semantic Memories (Notes)
+    - Active Tasks (Reminders)
+    - Recent Conversations (Chat History)
     """
     conn = get_db()
     cur = conn.cursor()
-    
-    # 1. Fetch relevant Events (Structured Search)
+    query_vec = embed_text(query)
+
+    # 1. Fetch Upcoming Events & Reminders (Structured)
+    cur.execute("""
+        SELECT message, trigger_time, priority_level 
+        FROM reminders 
+        WHERE user_id = %s AND status = 'active'
+        ORDER BY priority ASC, trigger_time ASC LIMIT 3
+    """, (user_id,))
+    reminders = cur.fetchall()
+
     cur.execute("""
         SELECT title, start_time, location_name 
         FROM events 
-        WHERE user_id = %s AND start_time >= NOW() - INTERVAL '1 day'
+        WHERE user_id = %s AND start_time >= NOW() - INTERVAL '6 hours'
         ORDER BY start_time ASC LIMIT 3
     """, (user_id,))
     events = cur.fetchall()
-    
-    # 2. Fetch relevant Notes (Semantic Vector Search)
-    query_vec = embed_text(query)
+
+    # 2. Fetch Relevant Notes (Semantic Vector Search)
     cur.execute("""
-        SELECT original_text 
+        SELECT original_text, created_at 
         FROM notes 
         WHERE user_id = %s 
         ORDER BY embedding <=> %s::vector 
-        LIMIT 3
-    """, (user_id, query_vec))
+        LIMIT %s
+    """, (user_id, query_vec, limit))
     notes = cur.fetchall()
+
+    # 3. Fetch Past Conversations (Semantic Vector Search)
+    cur.execute("""
+        SELECT sender, text, created_at 
+        FROM chat_messages 
+        WHERE user_id = %s 
+        ORDER BY embedding <=> %s::vector 
+        LIMIT %s
+    """, (user_id, query_vec, limit))
+    chats = cur.fetchall()
+
     conn.close()
 
-    # 3. Format the result for Phi-3
-    context = "--- RELEVANT SCHEDULE ---\n"
-    for e in events:
-        context += f"Event: {e[0]} at {e[1]} in {e[2]}\n"
-    
-    context += "\n--- RELEVANT MEMORIES ---\n"
-    for n in notes:
-        context += f"Note: {n[0]}\n"
-        
+    # 4. Format for the Personal Assistant Persona
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    context = f"CURRENT SYSTEM TIME: {now}\n\n"
+
+    if reminders:
+        context += "--- PENDING TASKS ---\n"
+        for r in reminders:
+            context += f"- [{r[2]}] {r[0]} due at {r[1]}\n"
+
+    if events:
+        context += "\n--- UPCOMING SCHEDULE ---\n"
+        for e in events:
+            context += f"- Event: {e[0]} at {e[1]} ({e[2]})\n"
+
+    if notes:
+        context += "\n--- PAST MEMORIES & NOTES ---\n"
+        for n in notes:
+            context += f"- Memory ({n[1].date()}): {n[0]}\n"
+
+    if chats:
+        context += "\n--- PREVIOUS RELEVANT CHATS ---\n"
+        for c in chats:
+            context += f"- {c[0]}: {c[1]} ({c[2].strftime('%H:%M')})\n"
+
     return context

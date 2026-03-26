@@ -2,28 +2,28 @@
 from services.db import get_db, get_cursor
 from collections import Counter
 
-def daily_overview(user_id: str):
-    conn = get_db()
-    cur = get_cursor(conn)
 
-    cur.execute("SELECT start_time, title FROM events WHERE user_id = %s", (user_id,))
-    rows = cur.fetchall()
-    conn.close()
-
+def analyze_user_patterns(rows):
     buckets = {"morning": [], "afternoon": [], "evening": [], "night": []}
-
+    
     for row in rows:
-        # Assuming start_time is ISO format like "2025-12-18 08:30"
         try:
-            time_part = row["start_time"].split(" ")[1] # Get HH:MM
-            hour = int(time_part.split(":")[0])
+            # Handle both string and datetime objects
+            time_data = row["start_time"]
+            if hasattr(time_data, 'hour'):
+                hour = time_data.hour
+            else:
+                # Assuming format "YYYY-MM-DD HH:MM:SS" or similar
+                time_part = str(time_data).split(" ")[1]
+                hour = int(time_part.split(":")[0])
+            
             activity = row["title"]
 
-            if 5 <= hour < 12:   buckets["morning"].append(activity)
-            elif 12 <= hour < 17: buckets["afternoon"].append(activity)
-            elif 17 <= hour < 21: buckets["evening"].append(activity)
-            else:                 buckets["night"].append(activity)
-        except:
+            if 5 <= hour < 12:    buckets["morning"].append(activity)
+            elif 12 <= hour < 17:  buckets["afternoon"].append(activity)
+            elif 17 <= hour < 21:  buckets["evening"].append(activity)
+            else:                  buckets["night"].append(activity)
+        except Exception as e:
             continue
 
     result = {}

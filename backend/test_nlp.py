@@ -43,16 +43,16 @@ def run_persona_tests():
         #     "name":"__dummy__",
         #     "query": "give me a plan for tommarow"
         # },
-        {
-            "user": "lawyer_alan",
-            "name": "Lawyer Alan",
-            "query": "What is the strategy for the Smith case?"
-        },
         # {
-        #     "user": "admin",
-        #     "name": "admin",
-        #     "query": "wha tdo you know about me"
+        #     "user": "lawyer_alan",
+        #     "name": "Lawyer Alan",
+        #     "query": "What is the strategy for the Smith case?"
         # },
+        {
+            "user": "dummy_professional",
+            "name": "dummy_professional",
+            "query": "wha tdo you know about me"
+        },
     ]
 
     for case in test_cases:

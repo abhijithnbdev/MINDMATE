@@ -17,5 +17,6 @@ STRICT RULES:
 3. If the user's new input conflicts with old memory, prioritize the NEW input.
 4. Keep the response concise and helpful.
 
+
 RESPONSE:
 """
